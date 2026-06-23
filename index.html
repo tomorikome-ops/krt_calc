@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>eGFR slope / KFRE / Gap リスク計算</title>
+<title>KRT導入準備支援ツール</title>
 <style>
 :root{--teal:#0f766e;--teal-d:#0b5852;--ink:#1f2937;--mut:#6b7280;--line:#e5e7eb;--bg:#f8fafc;--red:#c0392b;--amber:#b45309;--blue:#1f6fbf;--green:#15803d;}
 *{box-sizing:border-box}
@@ -50,8 +50,8 @@ svg{width:100%;height:auto;display:block}
 </head>
 <body>
 <div class="wrap">
-  <h1>eGFR slope ／ KFRE ／ Gap リスク計算</h1>
-  <div class="sub">年齢・性別・クレアチニンを入力 → eGFR（JSN 式）を自動算出し、傾き・閾値到達時期・KFRE・Gap リスクを計算</div>
+  <h1>KRT導入準備支援ツール</h1>
+  <div class="sub">年齢・性別・クレアチニンを入力 → eGFR（JSN 式）を自動算出し、傾き・閾値到達時期・KFRE・Gap リスク（計画的導入が実現しないリスク）を計算</div>
 
   <!-- 0. patient -->
   <div class="card">
@@ -93,7 +93,7 @@ svg{width:100%;height:auto;display:block}
     </div>
     <div style="margin-top:12px"><svg id="chart" viewBox="0 0 700 320"></svg></div>
     <div class="legend"><span><span class="dot" style="background:#0f766e"></span>算出 eGFR</span><span><span class="dot" style="background:#1f6fbf"></span>回帰直線（外挿）</span><span><span class="dot" style="background:#c0392b"></span>閾値 15/10/5/2</span></div>
-    <div class="note">slope = 算出 eGFR を時間（年）で OLS 回帰した傾き。到達時期は回帰直線の外挿。</div>
+    <div class="note">slope = 算出 eGFR を時間（年）で OLS 回帰した傾き。到達予測日は過去のeGFR推移を線形外挿した目安であり、AKI、心不全、感染、薬剤変更などにより大きく変動する可能性があります。</div>
   </div>
 
   <!-- 3. KFRE -->
@@ -132,9 +132,10 @@ svg{width:100%;height:auto;display:block}
     </div>
     <div class="out" style="margin-top:10px;font-size:13px;line-height:1.75">
       <div style="font-weight:700;color:var(--teal-d);margin-bottom:4px">この指標について</div>
-      <b>Decision–Implementation Gap（意思決定と導入療法の乖離）</b>とは、腎代替療法（KRT）選択外来の SDM で方針を決めても、実際の透析導入が ①決めた療法と異なる（Discordance）、または ②一致していても予定外の緊急導入（<b>Unplanned</b>）になる状態を指します。<br>
+      <b>Decision–Implementation Gap（意思決定と導入療法の乖離）</b>とは、KRT選択外来のSDMプロセスで方針が未決定のまま導入に至る、決定した療法と実際の導入療法が異なる、または決定療法は一致していても恒久的アクセスを使用できず予定外導入となる状態を指します。<br>
       本研究では、<b>eGFR の低下が速い（slope が急峻な）患者ほど、とくに Unplanned が増える</b>ことが示されました。低下が速いと SDM から導入までの<b>準備の猶予が短くなる</b>ためと考えられます。<br>
-      上に表示される発生率は「その slope カテゴリの患者で、実際に Gap / Unplanned が起きた割合」です。<b>slope &lt; −8.45</b> で Unplanned リスクが高く、こうした急速進行例では <b>SDM やバスキュラーアクセス準備の前倒し</b>を検討する材料になります。
+      上に表示される発生率は「その slope カテゴリの患者で、実際に Gap / Unplanned が起きた割合」です。<b>slope &lt; −8.45</b> で Unplanned リスクが高く、こうした急速進行例では <b>SDM やバスキュラーアクセス準備の前倒し</b>を検討する材料になります。<br>
+      <span style="color:var(--mut)">※ slope &lt; −8.45 は本研究データにおける探索的カットオフです。</span>
     </div>
     <div class="note">単施設後ろ向き（N=312）の観察値に基づく目安。slope&lt;−8.45（Youden）で Unplanned リスク高、slope&lt;−5 で Rapid progression（Unplanned aOR 3.90, p&lt;0.001）。個別予測ではなく群レベルの参考値。</div>
   </div>
