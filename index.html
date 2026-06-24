@@ -94,7 +94,7 @@ svg{width:100%;height:auto;display:block}
     </div>
     <div style="margin-top:12px"><svg id="chart" viewBox="0 0 700 320"></svg></div>
     <div class="legend"><span><span class="dot" style="background:#0f766e"></span>算出 eGFR</span><span><span class="dot" style="background:#1f6fbf"></span>回帰直線（外挿）</span><span><span class="dot" style="background:#c0392b"></span>閾値 15/10/5/2</span></div>
-    <div class="note">slope = 算出 eGFR を時間（年）で OLS 回帰した傾き。到達予測日は過去のeGFR推移を線形外挿した目安であり、AKI、心不全、感染、薬剤変更などにより大きく変動する可能性があります。</div>
+    <div class="note">slope = 算出 eGFR を時間（年）で OLS 回帰した傾き。到達予測は最新の実測 eGFR を起点に平均 slope で線形外挿した目安で、AKI・心不全・感染・薬剤変更などにより大きく変動する可能性があります。</div>
   </div>
 
   <!-- 3. KFRE -->
@@ -207,9 +207,10 @@ function fmtDate(d){return d.getFullYear()+"/"+String(d.getMonth()+1).padStart(2
 function remain(years){if(years<0)return "";const mo=Math.round(years*12);return mo<24?`（あと約${mo}か月）`:`（あと約${years.toFixed(1)}年）`;}
 function projectCross(reg,thr){
   if(!reg||reg.single||reg.slope>=-0.001)return "—（低下傾向なし）";
-  const xc=(thr-reg.intercept)/reg.slope, date=new Date(reg.t0+xc*365.25*DAY);
-  if(xc<=reg.xLast)return fmtDate(date)+"（既に到達済み）";
-  return fmtDate(date)+" "+remain(xc-reg.xLast);
+  if(reg.yLast<=thr) return "既に到達済み";
+  const yrs=(reg.yLast-thr)/(-reg.slope);            // 最新の実測 eGFR を起点に平均 slope で外挿
+  const date=new Date(reg.dLast.getTime()+yrs*365.25*DAY);
+  return fmtDate(date)+" "+remain(yrs);
 }
 function sumida(pcr){if(!(pcr>0))return null;const L=Math.log;return Math.exp(5.3920+0.3072*L(Math.min(pcr/50,1))+1.5793*L(Math.max(Math.min(pcr/500,1),0.1))+1.1266*L(Math.max(pcr/500,1)));}
 function kfre(age,male,egfr,acr,region){if(!(age>0)||!(egfr>0)||!(acr>0))return null;
@@ -270,7 +271,7 @@ function drawChart(reg){
   const W=700,H=320,ml=46,mr=14,mt=14,mb=34;const x0=ml,x1=W-mr,y0=H-mb,y1=mt;
   let svg=`<rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>`;
   let xMaxYr=1,yMax=30;const full=reg&&!reg.single;
-  if(full){const crosses=[15,10,5,2].map(t=>reg.slope<-0.001?(t-reg.intercept)/reg.slope:reg.xLast);
+  if(full){const crosses=[15,10,5,2].map(t=>reg.slope<-0.001?(reg.xLast+(reg.yLast-t)/(-reg.slope)):reg.xLast);
     xMaxYr=Math.max(reg.xLast,...crosses.filter(c=>c>0&&c<reg.xLast+15))*1.05;if(!(xMaxYr>0))xMaxYr=reg.xLast+1;
     yMax=Math.max(30,Math.ceil((Math.max(...reg.ys)+3)/5)*5);}
   else if(reg&&reg.raw&&reg.raw.length){yMax=Math.max(30,Math.ceil((Math.max(...reg.raw.map(p=>p.egfr))+3)/5)*5);}
@@ -282,7 +283,7 @@ function drawChart(reg){
   for(let yr=0;yr<=xMaxYr+0.01;yr+=step){svg+=`<line x1="${X(yr)}" y1="${y0}" x2="${X(yr)}" y2="${y0+4}" stroke="#555"/><text x="${X(yr)}" y="${y0+18}" font-size="11" fill="#6b7280" text-anchor="middle">${yr.toFixed(0)}</text>`;}
   svg+=`<text x="${(x0+x1)/2}" y="${H-2}" font-size="11" fill="#1f2937" text-anchor="middle">起点からの年数</text>`;
   if(full){
-    const yA=reg.intercept,yB=reg.intercept+reg.slope*xMaxYr;
+    const yA=reg.yLast+reg.slope*(0-reg.xLast),yB=reg.yLast+reg.slope*(xMaxYr-reg.xLast);
     svg+=`<line x1="${X(0)}" y1="${Y(Math.max(0,Math.min(yMax,yA)))}" x2="${X(xMaxYr)}" y2="${Y(Math.max(0,Math.min(yMax,yB)))}" stroke="#1f6fbf" stroke-width="2"/>`;
     reg.xs.forEach((xv,i)=>{svg+=`<circle cx="${X(xv)}" cy="${Y(reg.ys[i])}" r="4.5" fill="#0f766e"/>`;});
   } else if(reg&&reg.raw&&reg.raw.length){
