@@ -132,11 +132,14 @@ svg{width:100%;height:auto;display:block}
       <div class="kv"><span>Unplanned 発生率</span><b id="unplRate">–</b></div>
     </div>
     <div id="gapJudge" class="judgebox" style="display:none">–</div>
-    <div style="margin-top:10px;font-size:12.5px;line-height:2">
-      <div style="font-weight:600;color:var(--teal-d);margin-bottom:3px">判定基準</div>
-      <span class="pill p-red">slope &lt; −8.45</span> → 計画外導入 高リスク<br>
-      <span class="pill p-amber">slope &lt; −5</span> → 計画外導入 中リスク<br>
-      <span class="pill p-green">それ以外</span> → 計画外導入 低リスク
+    <div style="margin-top:10px;font-size:12.5px;line-height:1.85">
+      <div style="font-weight:600;color:var(--teal-d);margin-bottom:3px">判定の考え方（2軸）</div>
+      <b>① KRT 準備段階</b>（切迫度）：eGFR &lt; 15 または KFRE 2年 &gt; 40% → 準備を開始する段階。<br>
+      <b>② 計画外導入リスク</b>（slope 由来・本研究）：
+      <span class="pill p-red">slope&lt;−8.45 高</span>
+      <span class="pill p-amber">slope&lt;−5 中</span>
+      <span class="pill p-green">それ以外 低</span><br>
+      <span style="color:var(--mut)">eGFR が低ければ slope が緩やかでも KRT 準備は必要です（①を優先）。slope は準備を“前倒しすべきか”の目安です。</span>
     </div>
     <div class="out" style="margin-top:10px;font-size:13px;line-height:1.75">
       <div style="font-weight:700;color:var(--teal-d);margin-bottom:4px">この指標について</div>
@@ -240,10 +243,6 @@ function calc(){
     drawChart(reg);
     const g=gapRisk(reg.slope);
     $("gapCat").textContent=g.cat;$("gapRate").textContent=g.gap.toFixed(1)+" %";$("unplRate").textContent=g.unpl.toFixed(1)+" %";
-    {const jb=$("gapJudge"); jb.style.display="";
-     if(reg.slope<-8.45){jb.textContent="計画外導入 高リスク → SDM・アクセス準備を前倒し";jb.style.background="#fde8e6";jb.style.color="#c0392b";}
-     else if(reg.slope<-5){jb.textContent="計画外導入 中リスク → 早めに SDM を開始・アクセス準備を計画";jb.style.background="#fef3e2";jb.style.color="#b45309";}
-     else{jb.textContent="計画外導入 低リスク → 準備の時間的余裕が比較的ある";jb.style.background="#e7f6ec";jb.style.color="#15803d";}}
   } else {
     $("slopeVal").textContent="–";
     const last=reg&&reg.single&&reg.raw.length?reg.raw[reg.raw.length-1]:null;
@@ -265,6 +264,33 @@ function calc(){
   } else {acr=parseFloat($("acr").value);$("pcrWarn").textContent="";}
   const k=kfre(age,male,kegfr,acr,region);
   $("kfre2").textContent=k?k.r2.toFixed(1):"–";$("kfre5").textContent=k?k.r5.toFixed(1):"–";
+
+  // ===== 統合判定（① KRT 準備段階: eGFR<15 or KFRE 2年>40% ／ ② 計画外導入リスク: slope） =====
+  if(reg&&!reg.single){
+    const jb=$("gapJudge"); jb.style.display="";
+    const e=reg.yLast, kf=(k?k.r2:null);
+    const stage = (e<15 || (kf!==null && kf>40)) ? 2 : (e<30 ? 1 : 0);   // 2=準備開始,1=計画検討,0=経過観察
+    const risk  = reg.slope<-8.45 ? 2 : reg.slope<-5 ? 1 : 0;            // 2=高,1=中,0=低
+    const stageTxt = ["経過観察の段階","KRT 準備計画を検討する段階","KRT 説明・準備を開始する段階"][stage];
+    const riskTxt  = ["計画外導入 低リスク","計画外導入 中リスク","計画外導入 高リスク"][risk];
+    let act;
+    if(stage===2 && risk===2) act="→ 早急に SDM・バスキュラーアクセス準備を前倒し";
+    else if(stage===2 && risk===1) act="→ 早めに SDM・アクセス準備を開始";
+    else if(stage===2) act="→ 計画外導入リスクは低めだが、KRT 準備は必要。計画的に SDM・アクセス準備を進める";
+    else if(stage===1 && risk===2) act="→ eGFR 低下が急速。早めに SDM・準備計画を";
+    else if(stage===1 && risk===1) act="→ 早めに準備計画を立てる";
+    else if(stage===1) act="→ 通常の計画で準備を進める";
+    else if(risk===2) act="→ eGFR は保たれるが低下が急速。進行因子の評価と早めの計画を";
+    else if(risk===1) act="→ 低下がやや速め。定期評価を継続";
+    else act="→ 定期評価を継続";
+    jb.textContent = stageTxt + " ／ " + riskTxt + " " + act;
+    let col;
+    if(risk===2 || (stage===2 && risk>=1)) col="red";
+    else if(stage>=1 || risk===1) col="amber";
+    else col="green";
+    const C={red:["#fde8e6","#c0392b"],amber:["#fef3e2","#b45309"],green:["#e7f6ec","#15803d"]}[col];
+    jb.style.background=C[0]; jb.style.color=C[1];
+  }
 }
 
 function drawChart(reg){
