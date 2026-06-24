@@ -33,6 +33,7 @@ button.ghost{background:#fff;color:var(--teal-d);border:1px solid var(--teal)}
 .unit{font-size:13px;color:var(--mut);font-weight:400}
 .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:700}
 .p-red{background:#fde8e6;color:var(--red)} .p-amber{background:#fef3e2;color:var(--amber)} .p-green{background:#e7f6ec;color:var(--green)}
+.judgebox{margin-top:8px;padding:10px 13px;border-radius:9px;font-size:13.5px;font-weight:700;line-height:1.55}
 .kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #eef2f7;font-size:14px}
 .kv:last-child{border-bottom:none}
 .kv b{font-variant-numeric:tabular-nums}
@@ -114,10 +115,11 @@ svg{width:100%;height:auto;display:block}
     </div>
     <div class="out" id="eacrOut" style="margin-top:10px;display:none"><div class="kv"><span>推定 eACR（Sumida crude 式）</span><b id="eacrVal">–</b></div></div>
     <div class="grid2" style="margin-top:10px">
-      <div class="out"><div class="unit">2年腎不全リスク</div><div><span class="big" id="kfre2">–</span><span class="unit">%</span></div></div>
-      <div class="out"><div class="unit">5年腎不全リスク</div><div><span class="big" id="kfre5">–</span><span class="unit">%</span></div></div>
+      <div class="out"><div class="unit">2年末期腎不全リスク</div><div><span class="big" id="kfre2">–</span><span class="unit">%</span></div></div>
+      <div class="out"><div class="unit">5年末期腎不全リスク</div><div><span class="big" id="kfre5">–</span><span class="unit">%</span></div></div>
     </div>
     <div class="warn" id="pcrWarn"></div>
+    <div class="note" style="color:#0b5852;font-weight:600">KFRE 2年リスク &gt;40%：KRT 説明・導入準備を開始する目安（KDIGO 2024）。</div>
     <div class="note">KFRE 4変数（Tangri）: 年齢・性別（上の患者情報）・eGFR・ACR。PCR→eACR は Sumida 2020（crude）。PCR≤50 mg/g は換算が不安定。</div>
   </div>
 
@@ -128,11 +130,17 @@ svg{width:100%;height:auto;display:block}
       <div class="kv"><span>slope カテゴリ</span><b id="gapCat">–</b></div>
       <div class="kv"><span>Gap（複合）発生率</span><b id="gapRate">–</b></div>
       <div class="kv"><span>Unplanned 発生率</span><b id="unplRate">–</b></div>
-      <div class="kv"><span>判定</span><b id="gapJudge">–</b></div>
+    </div>
+    <div id="gapJudge" class="judgebox" style="display:none">–</div>
+    <div style="margin-top:10px;font-size:12.5px;line-height:2">
+      <div style="font-weight:600;color:var(--teal-d);margin-bottom:3px">判定基準</div>
+      <span class="pill p-red">slope &lt; −8.45</span> → 計画外導入 高リスク<br>
+      <span class="pill p-amber">slope &lt; −5</span> → 計画外導入 中リスク<br>
+      <span class="pill p-green">それ以外</span> → 計画外導入 低リスク
     </div>
     <div class="out" style="margin-top:10px;font-size:13px;line-height:1.75">
       <div style="font-weight:700;color:var(--teal-d);margin-bottom:4px">この指標について</div>
-      <b>Decision–Implementation Gap（意思決定と導入療法の乖離）</b>とは、KRT選択外来のSDMプロセスで方針が未決定のまま導入に至る、決定した療法と実際の導入療法が異なる、または決定療法は一致していても恒久的アクセスを使用できず予定外導入となる状態を指します。<br>
+      <b>Decision–Implementation Gap（意思決定と導入療法の乖離）</b>とは、KRT選択外来のSDMプロセスで方針が未決定のまま導入に至る（Undecided）、決定した療法と実際の導入療法が異なる（Discordance）、または決定療法は一致していても恒久的アクセスを使用できず予定外導入となる状態（Unplanned）を指します。<br>
       本研究では、<b>eGFR の低下が速い（slope が急峻な）患者ほど、とくに Unplanned が増える</b>ことが示されました。低下が速いと SDM から導入までの<b>準備の猶予が短くなる</b>ためと考えられます。<br>
       上に表示される発生率は「その slope カテゴリの患者で、実際に Gap / Unplanned が起きた割合」です。<b>slope &lt; −8.45</b> で Unplanned リスクが高く、こうした急速進行例では <b>SDM やバスキュラーアクセス準備の前倒し</b>を検討する材料になります。<br>
       <span style="color:var(--mut)">※ slope &lt; −8.45 は本研究データにおける探索的カットオフです。</span>
@@ -231,13 +239,16 @@ function calc(){
     drawChart(reg);
     const g=gapRisk(reg.slope);
     $("gapCat").textContent=g.cat;$("gapRate").textContent=g.gap.toFixed(1)+" %";$("unplRate").textContent=g.unpl.toFixed(1)+" %";
-    $("gapJudge").innerHTML=reg.slope<-8.45?'<span class="pill p-red">Unplanned 高リスク</span>':reg.slope<-5?'<span class="pill p-amber">要注意（SDM 前倒し検討）</span>':'<span class="pill p-green">標準</span>';
+    {const jb=$("gapJudge"); jb.style.display="";
+     if(reg.slope<-8.45){jb.textContent="計画外導入 高リスク → SDM・アクセス準備を前倒し";jb.style.background="#fde8e6";jb.style.color="#c0392b";}
+     else if(reg.slope<-5){jb.textContent="計画外導入 中リスク → 早めに SDM を開始・アクセス準備を計画";jb.style.background="#fef3e2";jb.style.color="#b45309";}
+     else{jb.textContent="計画外導入 低リスク → 準備の時間的余裕が比較的ある";jb.style.background="#e7f6ec";jb.style.color="#15803d";}}
   } else {
     $("slopeVal").textContent="–";
     const last=reg&&reg.single&&reg.raw.length?reg.raw[reg.raw.length-1]:null;
     $("lastEgfr").innerHTML=last?last.egfr.toFixed(1)+' <span class="unit">mL/分</span>':"–";
     $("lastDate").textContent=last?fmtDate(last.d):"";$("rapidFlag").innerHTML="";
-    ["t15","t10","t5","t2","gapCat","gapRate","unplRate"].forEach(id=>$(id).textContent="–");$("gapJudge").innerHTML="";
+    ["t15","t10","t5","t2","gapCat","gapRate","unplRate"].forEach(id=>$(id).textContent="–");$("gapJudge").style.display="none";
     if(last&&!$("kEgfr").value)$("kEgfr").placeholder=last.egfr.toFixed(1);
     drawChart(reg&&reg.raw?{single:true,raw:reg.raw}:null);
   }
