@@ -210,7 +210,7 @@ function fmtDate(d){return d.getFullYear()+"/"+String(d.getMonth()+1).padStart(2
 function remain(years){if(years<0)return "";const mo=Math.round(years*12);return mo<24?`（あと約${mo}か月）`:`（あと約${years.toFixed(1)}年）`;}
 function projectCross(reg,thr){
   if(!reg||reg.single||reg.slope>=-0.001)return "—（低下傾向なし）";
-  if(reg.yLast<=thr) return "既に到達済み";
+  if(reg.yLast<=thr) return '<span style="color:#9ca3af">到達済み</span>';
   const yrs=(reg.yLast-thr)/(-reg.slope);            // 最新の実測 eGFR を起点に平均 slope で外挿
   const date=new Date(reg.dLast.getTime()+yrs*365.25*DAY);
   return fmtDate(date)+" "+remain(yrs);
@@ -238,7 +238,7 @@ function calc(){
     $("lastEgfr").innerHTML=reg.yLast.toFixed(1)+' <span class="unit">mL/分</span>';
     $("lastDate").textContent=fmtDate(reg.dLast);
     $("rapidFlag").innerHTML = reg.slope<-8.45?'<span class="pill p-red">急速進行・Youden 閾値超</span>':reg.slope<-5?'<span class="pill p-amber">Rapid progression (&lt;−5)</span>':'<span class="pill p-green">非急速</span>';
-    $("t15").textContent=projectCross(reg,15);$("t10").textContent=projectCross(reg,10);$("t5").textContent=projectCross(reg,5);$("t2").textContent=projectCross(reg,2);
+    $("t15").innerHTML=projectCross(reg,15);$("t10").innerHTML=projectCross(reg,10);$("t5").innerHTML=projectCross(reg,5);$("t2").innerHTML=projectCross(reg,2);
     if(!$("kEgfr").value)$("kEgfr").placeholder=reg.yLast.toFixed(1);
     drawChart(reg);
     const g=gapRisk(reg.slope);
