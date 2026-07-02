@@ -47,12 +47,26 @@ svg{width:100%;height:auto;display:block}
 .toggle button.on{background:var(--teal);color:#fff}
 .disc{font-size:11px;color:var(--mut);background:#fff;border:1px dashed var(--line);border-radius:10px;padding:10px;margin-top:4px}
 .warn{color:var(--red);font-size:12.5px;margin-top:6px}
+#printHeader{display:none;font-size:13px;color:#333;margin:2px 0 10px;border-bottom:1px solid #ccc;padding-bottom:6px}
+@media print{
+  .no-print{display:none !important}
+  body{background:#fff}
+  .wrap{max-width:100%;padding:0}
+  .card{box-shadow:none !important;border:1px solid #ccc;break-inside:avoid;page-break-inside:avoid}
+  #printHeader{display:block !important}
+  input,select{border:none !important;background:#fff !important;-webkit-appearance:none;appearance:none;padding-left:0}
+  svg{page-break-inside:avoid}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>KRT導入準備支援ツール</h1>
+  <div id="printHeader">結果レポート　印刷日：<span id="printDate"></span></div>
   <div class="sub">年齢・性別・クレアチニンを入力 → eGFR（JSN 式）を自動算出し、傾き・閾値到達時期・KFRE・Gap リスク（計画的導入が実現しないリスク）を計算</div>
+  <div class="no-print" style="text-align:center;margin:8px 0 2px">
+    <button class="act ghost" onclick="window.print()">🖨 結果を保存 / 印刷（PDFで保存可）</button>
+  </div>
 
   <!-- 0. patient -->
   <div class="card">
@@ -71,7 +85,7 @@ svg{width:100%;height:auto;display:block}
       <thead><tr><th style="width:40%">検査日</th><th style="width:28%">Cr<br><span style="font-weight:400">(mg/dL)</span></th><th style="width:24%">eGFR<br><span style="font-weight:400">(自動)</span></th><th></th></tr></thead>
       <tbody id="crBody"></tbody>
     </table>
-    <div style="display:flex;gap:8px;margin-top:10px">
+    <div style="display:flex;gap:8px;margin-top:10px" class="no-print">
       <button class="act" onclick="addRow()">＋ 行を追加</button>
       <button class="act ghost" onclick="loadDemo()">サンプル入力</button>
     </div>
@@ -82,7 +96,7 @@ svg{width:100%;height:auto;display:block}
   <div class="card">
     <h2><span class="num">3</span>eGFR slope と閾値到達時期</h2>
     <div class="grid2">
-      <div class="out"><div class="unit">eGFR slope</div><div><span class="big" id="slopeVal">–</span> <span class="unit">/年</span></div><div id="rapidFlag" style="margin-top:4px"></div></div>
+      <div class="out"><div class="unit">eGFR slope</div><div><span class="big" id="slopeVal">–</span> <span class="unit">/年</span></div><div id="rapidFlag" style="margin-top:4px"></div><div class="unit" id="nPts" style="margin-top:3px"></div></div>
       <div class="out"><div class="unit">最新 eGFR</div><div><span class="big" id="lastEgfr">–</span></div><div class="unit" id="lastDate"></div></div>
     </div>
     <div class="out" style="margin-top:10px">
@@ -151,6 +165,11 @@ svg{width:100%;height:auto;display:block}
     <div class="note">単施設後ろ向き（N=312）の観察値に基づく目安。slope&lt;−8.45（Youden）で Unplanned リスク高、slope&lt;−5 で Rapid progression（Unplanned aOR 3.90, p&lt;0.001）。個別予測ではなく群レベルの参考値。</div>
   </div>
 
+  <div class="no-print" style="text-align:center;margin:16px 0 4px">
+    <button class="act" onclick="window.print()">🖨 結果を保存 / 印刷（PDFで保存可）</button>
+    <div class="note" style="margin-top:6px">ブラウザの印刷から「PDFに保存」を選ぶと結果を保存できます。</div>
+  </div>
+
   <div class="disc">
     <b>免責</b>：本ツールは研究・教育目的の試作です。eGFR は JSN 式（Matsuo 2009）、KFRE は Tangri 4変数（non-North American 較正）、PCR→ACR は Sumida 2020（crude）の公表式、Gap 発生率は当院単施設データ（N=312）に基づきます。実際の臨床判断は主治医の総合評価に従ってください。データは端末内のみで処理され送信されません。
   </div>
@@ -166,10 +185,10 @@ function render(){
   const b=$("crBody");b.innerHTML="";
   rows.forEach((r,i)=>{
     const tr=document.createElement("tr");tr.className="row";
-    tr.innerHTML=`<td><input type="date" value="${r.date}" onchange="upd(${i},'date',this.value)"></td>
-      <td><input type="number" inputmode="decimal" step="0.01" value="${r.cr}" oninput="upd(${i},'cr',this.value)" placeholder="–"></td>
+    tr.innerHTML=`<td><input type="date" value="${r.date}" oninput="upd(${i},'date',this.value)" onchange="upd(${i},'date',this.value)"></td>
+      <td><input type="number" inputmode="decimal" step="0.01" value="${r.cr}" oninput="upd(${i},'cr',this.value)" onchange="upd(${i},'cr',this.value)" placeholder="–"></td>
       <td><span class="egfrcell" id="egfr-${i}">–</span></td>
-      <td><button class="del" onclick="delRow(${i})" title="削除">×</button></td>`;
+      <td><button class="del no-print" onclick="delRow(${i})" title="削除">×</button></td>`;
     b.appendChild(tr);
   });
   calc();
@@ -193,9 +212,7 @@ function regression(){
   if(!(age>0)||raw.length===0)return null;
   raw.sort((a,b)=>a.d-b.d);
   const tLast=raw[raw.length-1].d.getTime();
-  // age at each date = age - (tLast - date)/yr   (entered age anchored to latest measurement)
   raw.forEach(p=>{const ageAt=age-(tLast-p.d.getTime())/(365.25*DAY); p.egfr=jsnEgfr(p.cr,ageAt,female);});
-  // fill row eGFR cells
   rows.forEach((r,i)=>{const el=$("egfr-"+i);if(el){const m=raw.find(p=>p.i===i);el.textContent=m?m.egfr.toFixed(1):"–";}});
   if(raw.length<2)return {single:true,raw};
   const t0=raw[0].d.getTime();
@@ -211,7 +228,7 @@ function remain(years){if(years<0)return "";const mo=Math.round(years*12);return
 function projectCross(reg,thr){
   if(!reg||reg.single||reg.slope>=-0.001)return "—（低下傾向なし）";
   if(reg.yLast<=thr) return '<span style="color:#9ca3af">到達済み</span>';
-  const yrs=(reg.yLast-thr)/(-reg.slope);            // 最新の実測 eGFR を起点に平均 slope で外挿
+  const yrs=(reg.yLast-thr)/(-reg.slope);
   const date=new Date(reg.dLast.getTime()+yrs*365.25*DAY);
   return fmtDate(date)+" "+remain(yrs);
 }
@@ -252,7 +269,14 @@ function calc(){
     if(last&&!$("kEgfr").value)$("kEgfr").placeholder=last.egfr.toFixed(1);
     drawChart(reg&&reg.raw?{single:true,raw:reg.raw}:null);
   }
-  $("crWarn").textContent = !( parseFloat($("age").value)>0 ) ? "※ 年齢を入力してください（eGFR 計算に必要）。" : (validN<2 ? "※ slope 計算には 日付＋Cr が2点以上必要です。" : "");
+  const withCr=rows.filter(r=>r.cr!==""&&parseFloat(r.cr)>0);
+  const noDate=withCr.filter(r=>!r.date).length;
+  let msg="";
+  if(!(parseFloat($("age").value)>0)) msg="※ 年齢を入力してください（eGFR 計算に必要）。";
+  else if(validN<2) msg="※ slope 計算には「日付＋Cr」が2点以上必要です。";
+  if(noDate>0) msg += (msg?"　":"")+`※ 日付が未入力の ${noDate} 点は slope 計算に使われていません。`;
+  $("crWarn").textContent = msg;
+  $("nPts").textContent = (reg&&!reg.single)?`（有効データ ${validN} 点で算出）`:"";
 
   // KFRE
   const age=parseFloat($("age").value), male=parseInt($("sex").value);
@@ -269,8 +293,8 @@ function calc(){
   if(reg&&!reg.single){
     const jb=$("gapJudge"); jb.style.display="";
     const e=reg.yLast, kf=(k?k.r2:null);
-    const stage = (e<15 || (kf!==null && kf>40)) ? 2 : (e<30 ? 1 : 0);   // 2=準備開始,1=計画検討,0=経過観察
-    const risk  = reg.slope<-8.45 ? 2 : reg.slope<-5 ? 1 : 0;            // 2=高,1=中,0=低
+    const stage = (e<15 || (kf!==null && kf>40)) ? 2 : (e<30 ? 1 : 0);
+    const risk  = reg.slope<-8.45 ? 2 : reg.slope<-5 ? 1 : 0;
     const stageTxt = ["経過観察の段階","KRT 準備計画を検討する段階","KRT 説明・準備を開始する段階"][stage];
     const riskTxt  = ["計画外導入 低リスク","計画外導入 中リスク","計画外導入 高リスク"][risk];
     let act;
@@ -322,6 +346,8 @@ function drawChart(reg){
 }
 
 addRow();addRow();setAlbMode("pcr");
+(function(){var el=$("printDate");if(el)el.textContent=new Date().toLocaleDateString("ja-JP");})();
+window.addEventListener("beforeprint",function(){var el=$("printDate");if(el)el.textContent=new Date().toLocaleDateString("ja-JP");});
 </script>
 </body>
 </html>
