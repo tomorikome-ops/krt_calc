@@ -56,6 +56,15 @@ svg{width:100%;height:auto;display:block}
   #printHeader{display:block !important}
   input,select{border:none !important;background:#fff !important;-webkit-appearance:none;appearance:none;padding-left:0}
   svg{page-break-inside:avoid}
+  body.graphonly h1, body.graphonly .sub, body.graphonly .card, body.graphonly .disc{display:none !important}
+  body.graphonly #slopeCard{display:block !important;border:none}
+  body.graphonly #slopeCard .num{display:none}
+  #patientTitle{display:none}
+  body.graphonly #slopeCard h2{display:none !important}
+  body.graphonly #patientTitle{display:block !important;font-size:17px;font-weight:700;color:#0b5852;margin-bottom:10px}
+  body.graphonly #patientNameLine{display:block !important;font-size:13px;color:#333;margin-bottom:12px}
+  body.graphonly #projBlock{display:none !important}
+  body.graphonly #slopeCard .note{display:none !important}
 }
 </style>
 </head>
@@ -93,13 +102,16 @@ svg{width:100%;height:auto;display:block}
   </div>
 
   <!-- 2. slope + projection + chart -->
-  <div class="card">
+  <div class="card" id="slopeCard">
     <h2><span class="num">3</span>eGFR slope と閾値到達時期</h2>
+    <div id="patientTitle" style="display:none">腎機能（eGFR）の推移とみとおし</div>
+    <div id="patientNameLine" style="display:none">お名前：____________________　　記録日：<span id="patientPrintDate"></span></div>
+    <div id="chartCaption"></div>
     <div class="grid2">
       <div class="out"><div class="unit">eGFR slope</div><div><span class="big" id="slopeVal">–</span> <span class="unit">/年</span></div><div id="rapidFlag" style="margin-top:4px"></div><div class="unit" id="nPts" style="margin-top:3px"></div></div>
       <div class="out"><div class="unit">最新 eGFR</div><div><span class="big" id="lastEgfr">–</span></div><div class="unit" id="lastDate"></div></div>
     </div>
-    <div class="out" style="margin-top:10px">
+    <div class="out" id="projBlock" style="margin-top:10px">
       <div class="unit" style="margin-bottom:5px">回帰直線からの到達予測</div>
       <div class="kv"><span>eGFR&lt;15 になる時期</span><b id="t15">–</b></div>
       <div class="kv"><span>eGFR&lt;10 になる時期</span><b id="t10">–</b></div>
@@ -109,6 +121,9 @@ svg{width:100%;height:auto;display:block}
     <div style="margin-top:12px"><svg id="chart" viewBox="0 0 700 320"></svg></div>
     <div class="legend"><span><span class="dot" style="background:#0f766e"></span>算出 eGFR</span><span><span class="dot" style="background:#1f6fbf"></span>回帰直線（外挿）</span><span><span class="dot" style="background:#c0392b"></span>閾値 15/10/5/2</span></div>
     <div class="note">slope = 算出 eGFR を時間（年）で OLS 回帰した傾き。到達予測は最新の実測 eGFR を起点に平均 slope で線形外挿した目安で、AKI・心不全・感染・薬剤変更などにより大きく変動する可能性があります。</div>
+    <div class="no-print" style="text-align:center;margin-top:12px">
+      <button class="act ghost" onclick="printGraph()">🖨 グラフだけ印刷（患者用）</button>
+    </div>
   </div>
 
   <!-- 3. KFRE -->
@@ -212,7 +227,9 @@ function regression(){
   if(!(age>0)||raw.length===0)return null;
   raw.sort((a,b)=>a.d-b.d);
   const tLast=raw[raw.length-1].d.getTime();
+  // age at each date = age - (tLast - date)/yr   (entered age anchored to latest measurement)
   raw.forEach(p=>{const ageAt=age-(tLast-p.d.getTime())/(365.25*DAY); p.egfr=jsnEgfr(p.cr,ageAt,female);});
+  // fill row eGFR cells
   rows.forEach((r,i)=>{const el=$("egfr-"+i);if(el){const m=raw.find(p=>p.i===i);el.textContent=m?m.egfr.toFixed(1):"–";}});
   if(raw.length<2)return {single:true,raw};
   const t0=raw[0].d.getTime();
@@ -228,7 +245,7 @@ function remain(years){if(years<0)return "";const mo=Math.round(years*12);return
 function projectCross(reg,thr){
   if(!reg||reg.single||reg.slope>=-0.001)return "—（低下傾向なし）";
   if(reg.yLast<=thr) return '<span style="color:#9ca3af">到達済み</span>';
-  const yrs=(reg.yLast-thr)/(-reg.slope);
+  const yrs=(reg.yLast-thr)/(-reg.slope);            // 最新の実測 eGFR を起点に平均 slope で外挿
   const date=new Date(reg.dLast.getTime()+yrs*365.25*DAY);
   return fmtDate(date)+" "+remain(yrs);
 }
@@ -293,8 +310,8 @@ function calc(){
   if(reg&&!reg.single){
     const jb=$("gapJudge"); jb.style.display="";
     const e=reg.yLast, kf=(k?k.r2:null);
-    const stage = (e<15 || (kf!==null && kf>40)) ? 2 : (e<30 ? 1 : 0);
-    const risk  = reg.slope<-8.45 ? 2 : reg.slope<-5 ? 1 : 0;
+    const stage = (e<15 || (kf!==null && kf>40)) ? 2 : (e<30 ? 1 : 0);   // 2=準備開始,1=計画検討,0=経過観察
+    const risk  = reg.slope<-8.45 ? 2 : reg.slope<-5 ? 1 : 0;            // 2=高,1=中,0=低
     const stageTxt = ["経過観察の段階","KRT 準備計画を検討する段階","KRT 説明・準備を開始する段階"][stage];
     const riskTxt  = ["計画外導入 低リスク","計画外導入 中リスク","計画外導入 高リスク"][risk];
     let act;
@@ -348,6 +365,8 @@ function drawChart(reg){
 addRow();addRow();setAlbMode("pcr");
 (function(){var el=$("printDate");if(el)el.textContent=new Date().toLocaleDateString("ja-JP");})();
 window.addEventListener("beforeprint",function(){var el=$("printDate");if(el)el.textContent=new Date().toLocaleDateString("ja-JP");});
+function printGraph(){var pd=$("patientPrintDate");if(pd)pd.textContent=new Date().toLocaleDateString("ja-JP");document.body.classList.add("graphonly");window.print();}
+window.addEventListener("afterprint",function(){document.body.classList.remove("graphonly");});
 </script>
 </body>
 </html>
