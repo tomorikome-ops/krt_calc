@@ -21,6 +21,9 @@ input[type=date],input[type=number],input[type=text],select{width:100%;padding:8
 input:focus,select:focus{outline:none;border-color:var(--teal)}
 .datetext{margin-top:4px;font-size:13px !important;padding:6px 8px !important;color:#374151}
 #evBlock input{font-size:14px}
+.evrow{border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px;background:#fff}
+.evradio{font-size:12px;color:var(--teal-d);display:flex;align-items:center;gap:3px;white-space:nowrap;padding-top:6px}
+.evradio input{width:auto}
 .row td{border-bottom:1px solid #f1f5f9}
 .egfrcell{font-variant-numeric:tabular-nums;font-weight:700;color:var(--teal-d)}
 .del{background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0 4px}
@@ -66,6 +69,7 @@ svg{width:100%;height:auto;display:block}
   body.graphonly #patientTitle{display:block !important;font-size:17px;font-weight:700;color:#0b5852;margin-bottom:10px}
   body.graphonly #patientNameLine{display:block !important;font-size:13px;color:#333;margin-bottom:12px}
   body.graphonly #projBlock{display:none !important}
+  body.graphonly #deltaBlock{display:none !important}
   body.graphonly #slopeCard .note{display:none !important}
 }
 </style>
@@ -121,21 +125,17 @@ svg{width:100%;height:auto;display:block}
       <div class="kv"><span>eGFR&lt;2 になる時期</span><b id="t2">–</b></div>
     </div>
     <div class="out no-print" id="evBlock" style="margin-top:10px">
-      <div class="unit" style="margin-bottom:6px">臨床イベント基点（前後で slope を比較・グラフに矢印表示）</div>
-      <div class="grid2">
-        <input type="text" id="evName" placeholder="イベント名（例：SGLT2 開始）" oninput="calc()">
-        <div>
-          <input type="date" id="evDate" onchange="syncEvText();calc()">
-          <input type="text" class="datetext" id="evDateText" placeholder="又は 2024/5/6" onchange="updEvDate(this.value)">
-        </div>
-      </div>
+      <div class="unit" style="margin-bottom:6px">臨床イベント基点（複数登録可・グラフに矢印表示）</div>
+      <div id="evList"></div>
+      <button class="act ghost" style="margin-top:8px" onclick="addEvent()">＋ イベント追加</button>
     </div>
-    <div class="out" id="prePostBlock" style="margin-top:10px;display:none">
-      <div class="unit" style="margin-bottom:5px" id="prePostTitle">基点前後の eGFR slope 比較</div>
+    <div class="out" id="deltaBlock" style="margin-top:10px;display:none">
+      <div class="unit" style="margin-bottom:5px" id="deltaTitle">傾きの変化（区分回帰）</div>
       <div class="kv"><span>基点前 slope</span><b id="slopePre">–</b></div>
       <div class="kv"><span>基点後 slope</span><b id="slopePost">–</b></div>
-      <div class="kv"><span>Δslope（後 − 前）</span><b id="slopeDelta">–</b></div>
-      <div class="note" id="prePostNote"></div>
+      <div class="kv"><span>Δslope（後 − 前, 95%CI）</span><b id="slopeDelta">–</b></div>
+      <div class="kv"><span>p 値（傾きの差）</span><b id="slopeP">–</b></div>
+      <div class="note" id="deltaNote"></div>
     </div>
     <div style="margin-top:12px"><svg id="chart" viewBox="0 0 700 320"></svg></div>
     <div class="legend"><span><span class="dot" style="background:#0f766e"></span>算出 eGFR</span><span><span class="dot" style="background:#1f6fbf"></span>回帰直線（外挿）</span><span><span class="dot" style="background:#c0392b"></span>閾値 15/10/5/2</span></div>
@@ -232,6 +232,7 @@ function upd(i,k,v){rows[i][k]=v;calc();}
 function loadDemo(){
   $("age").value=68;$("sex").value="1";$("pcr").value=1800;
   rows=[{date:"2023-01-15",cr:"1.95"},{date:"2023-07-20",cr:"2.35"},{date:"2024-01-18",cr:"2.70"},{date:"2024-07-22",cr:"3.40"},{date:"2025-01-20",cr:"4.20"}];
+  events=[{name:"SGLT2 開始",date:"2024-01-18"}];deltaEventIdx=0;renderEvents();
   render();
 }
 const DAY=86400000;
@@ -255,8 +256,6 @@ function updDateText(i,v){
   if(dt){rows[i].date=fmtISO(dt);render();}
   else{$("crWarn").textContent="※ 日付の形式が不正です（例：2024/5/6, 2024-05-06, 20240506）。";}
 }
-function updEvDate(v){const dt=parseD(v);if(dt){$("evDate").value=fmtISO(dt);}calc();}
-function syncEvText(){const d=parseD($("evDate").value);$("evDateText").value=d?fmtDate(d):"";}
 function olsSlope(pts){
   if(!pts||pts.length<2)return null;
   const t0=pts[0].d.getTime();
@@ -267,23 +266,85 @@ function olsSlope(pts){
   return sxy/sxx;
 }
 function escSvg(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-function computePrePost(reg){
-  const evDate=parseD($("evDate").value), evName=$("evName").value.trim(), blk=$("prePostBlock");
+
+/* ---- 複数イベント管理 ---- */
+let events=[]; let deltaEventIdx=-1;
+function addEvent(name="",date=""){events.push({name:name,date:date});if(deltaEventIdx<0)deltaEventIdx=events.length-1;renderEvents();}
+function delEvent(i){events.splice(i,1);if(deltaEventIdx===i)deltaEventIdx=(events.length?0:-1);else if(deltaEventIdx>i)deltaEventIdx--;renderEvents();}
+function updEvent(i,k,v){events[i][k]=v;calc();}
+function updEventDateText(i,v){v=String(v).trim();if(v===""){events[i].date="";renderEvents();return;}const d=parseD(v);if(d){events[i].date=fmtISO(d);renderEvents();}else{$("crWarn").textContent="※ イベント日の形式が不正です（例：2024/5/6）。";}}
+function selDeltaEvent(i){deltaEventIdx=i;calc();}
+function renderEvents(){
+  const el=$("evList");el.innerHTML="";
+  events.forEach((e,i)=>{
+    const d=document.createElement("div");d.className="evrow";
+    d.innerHTML=`<input type="text" value="${(e.name||'').replace(/"/g,'&quot;')}" oninput="updEvent(${i},'name',this.value)" placeholder="イベント名（例：SGLT2 開始）">
+      <div style="display:flex;gap:6px;align-items:flex-start;margin-top:5px">
+        <div style="flex:1">
+          <input type="date" value="${e.date}" onchange="updEvent(${i},'date',this.value);renderEvents()">
+          <input type="text" class="datetext" value="${e.date?isoToSlash(e.date):''}" placeholder="又は 2024/5/6" onchange="updEventDateText(${i},this.value)">
+        </div>
+        <label class="evradio"><input type="radio" name="deltaEv" ${deltaEventIdx===i?'checked':''} onchange="selDeltaEvent(${i})"> Δ評価</label>
+        <button class="del no-print" onclick="delEvent(${i})" title="削除">×</button>
+      </div>`;
+    el.appendChild(d);
+  });
+  calc();
+}
+
+/* ---- 区分線形回帰: y = b0 + b1*t + b2*max(0,t-c) ; b2 = Δslope（後−前）---- */
+function inv3(m){const a=m[0][0],b=m[0][1],c=m[0][2],d=m[1][0],e=m[1][1],f=m[1][2],g=m[2][0],h=m[2][1],i=m[2][2];
+  const A=e*i-f*h,B=-(d*i-f*g),C=d*h-e*g,det=a*A+b*B+c*C;if(Math.abs(det)<1e-12)return null;
+  const D=-(b*i-c*h),E=a*i-c*g,F=-(a*h-b*g),G=b*f-c*e,H=-(a*f-c*d),I=a*e-b*d;
+  return[[A/det,D/det,G/det],[B/det,E/det,H/det],[C/det,F/det,I/det]];}
+const T975={1:12.706,2:4.303,3:3.182,4:2.776,5:2.571,6:2.447,7:2.365,8:2.306,9:2.262,10:2.228,11:2.201,12:2.179,13:2.160,14:2.145,15:2.131,16:2.120,17:2.110,18:2.101,19:2.093,20:2.086,21:2.080,22:2.074,23:2.069,24:2.064,25:2.060,26:2.056,27:2.052,28:2.048,29:2.045,30:2.042};
+function tcrit975(df){if(df<=30)return T975[df]||2.042;const z=1.959964;return z+(z**3+z)/(4*df)+(5*z**5+16*z**3+3*z)/(96*df*df);}
+function gln(x){const co=[76.18009172947146,-86.50532032941677,24.01409824083091,-1.231739572450155,0.1208650973866179e-2,-0.5395239384953e-5];
+  let y=x,tmp=x+5.5;tmp-=(x+0.5)*Math.log(tmp);let ser=1.000000000190015;for(let j=0;j<6;j++){y++;ser+=co[j]/y;}return -tmp+Math.log(2.5066282746310005*ser/x);}
+function betacf(a,b,x){const MAXIT=200,EPS=3e-12,FPMIN=1e-30;let qab=a+b,qap=a+1,qam=a-1,c=1,d=1-qab*x/qap;
+  if(Math.abs(d)<FPMIN)d=FPMIN;d=1/d;let h=d;for(let m=1;m<=MAXIT;m++){const m2=2*m;let aa=m*(b-m)*x/((qam+m2)*(a+m2));
+  d=1+aa*d;if(Math.abs(d)<FPMIN)d=FPMIN;c=1+aa/c;if(Math.abs(c)<FPMIN)c=FPMIN;d=1/d;h*=d*c;aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));
+  d=1+aa*d;if(Math.abs(d)<FPMIN)d=FPMIN;c=1+aa/c;if(Math.abs(c)<FPMIN)c=FPMIN;d=1/d;const del=d*c;h*=del;if(Math.abs(del-1)<EPS)break;}return h;}
+function betai(a,b,x){if(x<=0)return 0;if(x>=1)return 1;const bt=Math.exp(gln(a+b)-gln(a)-gln(b)+a*Math.log(x)+b*Math.log(1-x));
+  return x<(a+1)/(a+b+2)?bt*betacf(a,b,x)/a:1-bt*betacf(b,a,1-x)/b;}
+function studentCDF(t,df){return 1-0.5*betai(df/2,0.5,df/(df+t*t));}
+function piecewise(pts,cYr){
+  const n=pts.length;if(n<3)return null;
+  const nPre=pts.filter(p=>p.t<cYr).length,nPost=n-pts.filter(p=>p.t<cYr).length;
+  const X=pts.map(p=>[1,p.t,Math.max(0,p.t-cYr)]),y=pts.map(p=>p.y);
+  const XtX=[[0,0,0],[0,0,0],[0,0,0]],Xty=[0,0,0];
+  for(let i=0;i<n;i++)for(let a=0;a<3;a++){Xty[a]+=X[i][a]*y[i];for(let b=0;b<3;b++)XtX[a][b]+=X[i][a]*X[i][b];}
+  const inv=inv3(XtX);if(!inv)return {nPre,nPost,degenerate:true};
+  const beta=[0,0,0];for(let a=0;a<3;a++)for(let b=0;b<3;b++)beta[a]+=inv[a][b]*Xty[b];
+  let rss=0;for(let i=0;i<n;i++){const yh=beta[0]+beta[1]*X[i][1]+beta[2]*X[i][2];rss+=(y[i]-yh)**2;}
+  const df=n-3;const pre=beta[1],post=beta[1]+beta[2],delta=beta[2];
+  if(df<=0)return {pre,post,delta,nPre,nPost,df:0,noCI:true};
+  const s2=rss/df,seB2=Math.sqrt(Math.max(s2*inv[2][2],0)),tc=tcrit975(df);
+  const tstat=seB2>0?delta/seB2:0, p=seB2>0?2*(1-studentCDF(Math.abs(tstat),df)):1;
+  return {pre,post,delta,se:seB2,lo:delta-tc*seB2,hi:delta+tc*seB2,p,df,nPre,nPost};
+}
+function computeDelta(reg){
+  const blk=$("deltaBlock");
+  const ev=(deltaEventIdx>=0&&events[deltaEventIdx])?events[deltaEventIdx]:null;
+  const evDate=ev?parseD(ev.date):null;
   if(!reg||reg.single||!evDate){blk.style.display="none";return;}
-  const pts=reg.pts.slice().sort((a,b)=>a.d-b.d);
-  const pre=pts.filter(p=>p.d.getTime()<evDate.getTime());
-  const post=pts.filter(p=>p.d.getTime()>=evDate.getTime());
-  const sPre=olsSlope(pre), sPost=olsSlope(post);
+  const t0=reg.t0, cYr=(evDate.getTime()-t0)/(365.25*DAY);
+  const pts=reg.pts.map(p=>({t:(p.d.getTime()-t0)/(365.25*DAY),y:p.egfr}));
+  const r=piecewise(pts,cYr);
   blk.style.display="";
-  $("prePostTitle").textContent=(evName||"基点")+" 前後の eGFR slope 比較";
-  $("slopePre").textContent = sPre!==null?sPre.toFixed(2)+" /年（"+pre.length+"点）":"—（"+pre.length+"点・2点未満）";
-  $("slopePost").textContent = sPost!==null?sPost.toFixed(2)+" /年（"+post.length+"点）":"—（"+post.length+"点・2点未満）";
-  if(sPre!==null&&sPost!==null){const dd=sPost-sPre;
-    $("slopeDelta").textContent=(dd>=0?"+":"")+dd.toFixed(2)+" /年"+(dd>0.01?"（低下が緩やかに）":dd<-0.01?"（低下が加速）":"");}
-  else $("slopeDelta").textContent="—";
+  $("deltaTitle").textContent=(ev.name||"基点")+" 前後の傾きの変化（区分回帰）";
+  if(!r||r.degenerate){$("slopePre").textContent="–";$("slopePost").textContent="–";$("slopeDelta").textContent="—";$("slopeP").textContent="—";
+    $("deltaNote").innerHTML="<span style='color:#c0392b'>※ 有効点が不足しています（前後合計3点以上、各群1点以上が必要）。</span>";return;}
+  $("slopePre").textContent=r.pre.toFixed(2)+" /年（前 "+r.nPre+"点）";
+  $("slopePost").textContent=r.post.toFixed(2)+" /年（後 "+r.nPost+"点）";
+  const dtxt=(r.delta>=0?"+":"")+r.delta.toFixed(2);
+  if(r.noCI){$("slopeDelta").textContent=dtxt+" /年（CI算出不可, df=0）";$("slopeP").textContent="—";}
+  else{$("slopeDelta").textContent=dtxt+" /年（95%CI "+r.lo.toFixed(2)+"〜"+r.hi.toFixed(2)+"）";
+    $("slopeP").textContent=(r.p<0.001?"<0.001":r.p.toFixed(3))+"（df="+r.df+"）";}
   let w="";
-  if(pre.length<2||post.length<2) w="※ 前後いずれかが2点未満で slope を算出できません。各群3点以上での比較が望まれます。";
-  $("prePostNote").innerHTML=(w?"<span style='color:#c0392b'>"+w+"</span> ":"")+"前後比較は観察上の変化であり、介入の効果（因果）を示すものではありません（平均への回帰・自然経過・他要因の影響）。";
+  if(r.nPre<2||r.nPost<2) w="※ 前後いずれかが2点未満です。傾き・差の推定は非常に不安定です。";
+  else if(r.df<3) w="※ 自由度が小さく（df="+r.df+"）、CI・p は広く不安定です。探索的にご覧ください。";
+  $("deltaNote").innerHTML=(w?"<span style='color:#c0392b'>"+w+"</span><br>":"")+"区分回帰（交互作用）による傾きの差。<b>観察上の変化であり介入効果（因果）を示しません</b>（平均への回帰・自然経過・他要因の影響）。";
 }
 
 // ---- JSN eGFR (Matsuo 2009, enzymatic Cr, mg/dL) ----
@@ -344,7 +405,7 @@ function calc(){
     $("t15").innerHTML=projectCross(reg,15);$("t10").innerHTML=projectCross(reg,10);$("t5").innerHTML=projectCross(reg,5);$("t2").innerHTML=projectCross(reg,2);
     if(!$("kEgfr").value)$("kEgfr").placeholder=reg.yLast.toFixed(1);
     drawChart(reg);
-    computePrePost(reg);
+    computeDelta(reg);
     const g=gapRisk(reg.slope);
     $("gapCat").textContent=g.cat;$("gapRate").textContent=g.gap.toFixed(1)+" %";$("unplRate").textContent=g.unpl.toFixed(1)+" %";
   } else {
@@ -355,7 +416,7 @@ function calc(){
     ["t15","t10","t5","t2","gapCat","gapRate","unplRate"].forEach(id=>$(id).textContent="–");$("gapJudge").style.display="none";
     if(last&&!$("kEgfr").value)$("kEgfr").placeholder=last.egfr.toFixed(1);
     drawChart(reg&&reg.raw?{single:true,raw:reg.raw}:null);
-    computePrePost(null);
+    computeDelta(null);
   }
   const withCr=rows.filter(r=>r.cr!==""&&parseFloat(r.cr)>0);
   const noDate=withCr.filter(r=>!r.date).length;
@@ -424,15 +485,15 @@ function drawChart(reg){
     const yA=reg.yLast+reg.slope*(0-reg.xLast),yB=reg.yLast+reg.slope*(xMaxYr-reg.xLast);
     svg+=`<line x1="${X(0)}" y1="${Y(Math.max(0,Math.min(yMax,yA)))}" x2="${X(xMaxYr)}" y2="${Y(Math.max(0,Math.min(yMax,yB)))}" stroke="#1f6fbf" stroke-width="2"/>`;
     reg.xs.forEach((xv,i)=>{svg+=`<circle cx="${X(xv)}" cy="${Y(reg.ys[i])}" r="4.5" fill="#0f766e"/>`;});
-    const evD=parseD($("evDate").value);
-    if(evD){const evx=(evD.getTime()-reg.t0)/(365.25*DAY);
-      if(evx>=0&&evx<=xMaxYr){const px=X(evx);
-        svg+=`<line x1="${px}" y1="${y1}" x2="${px}" y2="${y0}" stroke="#7c3aed" stroke-width="1.4" stroke-dasharray="4 3"/>`;
-        svg+=`<path d="M ${px-5} ${y1} L ${px+5} ${y1} L ${px} ${y1+10} Z" fill="#7c3aed"/>`;
-        const rawnm=($("evName").value.trim()||"基点"), tw=rawnm.length*11+10;
-        let anc="middle",tx=px; if(px+tw/2>x1){anc="end";} else if(px-tw/2<x0){anc="start";}
-        svg+=`<text x="${tx}" y="${y1-8}" font-size="11" fill="#7c3aed" text-anchor="${anc}" font-weight="bold">${escSvg(rawnm)}</text>`;
-      }}
+    const evs=events.map(e=>({name:e.name,d:parseD(e.date)})).filter(e=>e.d).map(e=>({name:e.name,evx:(e.d.getTime()-reg.t0)/(365.25*DAY)}))
+      .filter(e=>e.evx>=0&&e.evx<=xMaxYr).sort((a,b)=>a.evx-b.evx);
+    evs.forEach((e,idx)=>{const px=X(e.evx), lvl=idx%2, ly=y1-6-lvl*13;
+      svg+=`<line x1="${px}" y1="${y1}" x2="${px}" y2="${y0}" stroke="#7c3aed" stroke-width="1.4" stroke-dasharray="4 3"/>`;
+      svg+=`<path d="M ${px-5} ${y1} L ${px+5} ${y1} L ${px} ${y1+10} Z" fill="#7c3aed"/>`;
+      const nm=(e.name&&e.name.trim())||"基点", tw=nm.length*11+8;
+      let anc="middle"; if(px+tw/2>x1)anc="end"; else if(px-tw/2<x0)anc="start";
+      svg+=`<text x="${px}" y="${ly}" font-size="11" fill="#7c3aed" text-anchor="${anc}" font-weight="bold">${escSvg(nm)}</text>`;
+    });
   } else if(reg&&reg.raw&&reg.raw.length){
     const t0=reg.raw[0].d.getTime();reg.raw.forEach(p=>{const xv=(p.d.getTime()-t0)/(365.25*DAY);svg+=`<circle cx="${X(xv)}" cy="${Y(p.egfr)}" r="4.5" fill="#0f766e"/>`;});
     svg+=`<text x="${(x0+x1)/2}" y="${(y0+y1)/2}" font-size="12" fill="#9ca3af" text-anchor="middle">2点以上で slope を表示</text>`;
@@ -442,7 +503,7 @@ function drawChart(reg){
   $("chart").innerHTML=svg;
 }
 
-addRow();addRow();setAlbMode("pcr");
+addRow();addRow();setAlbMode("pcr");renderEvents();
 (function(){var el=$("printDate");if(el)el.textContent=new Date().toLocaleDateString("ja-JP");})();
 window.addEventListener("beforeprint",function(){var el=$("printDate");if(el)el.textContent=new Date().toLocaleDateString("ja-JP");});
 function printGraph(){var pd=$("patientPrintDate");if(pd)pd.textContent=new Date().toLocaleDateString("ja-JP");document.body.classList.add("graphonly");window.print();}
